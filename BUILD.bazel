@@ -1,0 +1,13 @@
+load(":defs.bzl", "runfiles_test")
+
+sh_test(
+    name = "script",
+    srcs = ["script.sh"],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+    data = ["data.txt"],
+)
+
+runfiles_test(
+    name = "runfiles",
+    deps = [":script"],
+)
