@@ -1,3 +1,39 @@
+_TestInfo = provider()
+
+def _test_suite_aspect_impl(target, ctx):
+    if ctx.rule.kind == "test_suite":
+        paths = []
+        files = []
+        runfiles = []
+        for test in ctx.rule.attr.tests:
+            test_info = test[_TestInfo]
+            paths.append(test_info.paths)
+            files.append(test_info.files)
+            runfiles.append(test_info.runfiles)
+        info = _TestInfo(
+            paths = depset(transitive = paths),
+            files = depset(transitive = files),
+            runfiles = ctx.runfiles().merge_all(runfiles),
+        )
+        return [info]
+    elif ctx.rule.kind.endswith("_test"):
+        default_info = target[DefaultInfo]
+        workspace_name = default_info.files_to_run.executable.owner.workspace_name or "__main__"
+        short_path = default_info.files_to_run.executable.short_path
+        info = _TestInfo(
+            paths = depset(direct = [workspace_name + "/" + short_path]),
+            files = default_info.files,
+            runfiles = default_info.default_runfiles,
+        )
+        return [info]
+    else:
+        return []
+
+_test_suite_aspect = aspect(
+    implementation = _test_suite_aspect_impl,
+    attr_aspects = ["tests"],
+)
+
 _SCRIPT_SNIPPET= """\
 #!/usr/bin/env bash
 
@@ -27,17 +63,19 @@ def _runfiles_test_impl(ctx):
     deps_files = []
     deps_runfiles = []
     for dep in ctx.attr.deps:
-        workspace_name = dep[DefaultInfo].files_to_run.executable.owner.workspace_name or "__main__"
-        short_path = dep[DefaultInfo].files_to_run.executable.short_path
-        deps_paths.append(workspace_name + "/" + short_path)
-        deps_files.append(dep[DefaultInfo].files)
-        deps_runfiles.append(dep[DefaultInfo].default_runfiles)
-    content = _SCRIPT_SNIPPET.format(" ".join(deps_paths))
+        test_info = dep[_TestInfo]
+        deps_paths.append(test_info.paths)
+        deps_files.append(test_info.files)
+        deps_runfiles.append(test_info.runfiles)
+    paths = depset(transitive = deps_paths)
+    content = _SCRIPT_SNIPPET.format(" ".join(paths.to_list()))
+    files = depset(direct = [out], transitive = deps_files)
+    runfiles = ctx.runfiles([out]).merge_all(deps_runfiles)
     ctx.actions.write(out, content)
     return [DefaultInfo(
         executable = out,
-        files = depset(direct = [out], transitive = deps_files),
-        runfiles = ctx.runfiles([out]).merge_all(deps_runfiles),
+        files = files,
+        runfiles = runfiles,
     )]
 
 runfiles_test = rule(
@@ -48,6 +86,7 @@ runfiles_test = rule(
         "deps": attr.label_list(
             mandatory = False,
             allow_files = False,
+            aspects = [_test_suite_aspect],
         ),
     },
 )

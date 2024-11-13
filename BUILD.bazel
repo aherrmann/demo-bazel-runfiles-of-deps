@@ -7,7 +7,12 @@ sh_test(
     data = ["data.txt"],
 )
 
+test_suite(
+    name = "suite",
+    tests = [":script"],
+)
+
 runfiles_test(
     name = "runfiles",
-    deps = [":script"],
+    deps = [":suite"],
 )
